@@ -189,13 +189,16 @@ const App = () => {
       synthRef.current.dispose();
       filterRef.current.dispose();
       pitchShiftRef.current.dispose();
+      recorderRef.current.dispose();
+      looperRecorderRef.current.dispose();
+      looperPlayerRef.current.dispose();
       effectsRef.current.forEach(fx => fx.dispose());
     }
 
     const synth = INSTRUMENTS[instName]();
     // Bajamos el volumen dinámicamente un poco para dar headroom a la mezcla Master
-    synth.volume.value = -3;
-    Tone.getDestination().volume.value = -2; // Master safe level Static value instead of ramp to avoid early crash
+    synth.volume.value = -4;
+    Tone.getDestination().volume.value = -3; // Nivel maestro seguro
 
     // Expresión Theremin: Lowpass Dymanico + PitchShift Dinámico
     const filter = new Tone.Filter(2000, "lowpass");
