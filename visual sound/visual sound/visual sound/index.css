@@ -92,7 +92,7 @@ body.flash {
   font-size: 2.5rem;
   font-weight: 800;
   letter-spacing: -0.05em;
-  text-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
   margin-bottom: 0.2rem;
 }
 
@@ -120,7 +120,7 @@ body.flash {
   justify-content: center;
   align-items: center;
   padding: 1rem;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0, 0, 0, 0.4);
   border-radius: 20px;
   backdrop-filter: blur(10px);
 }
@@ -146,7 +146,7 @@ body.flash {
 .instrument-selector {
   display: flex;
   gap: 0.5rem;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0, 0, 0, 0.4);
   padding: 0.5rem;
   border-radius: 100px;
   backdrop-filter: blur(10px);
@@ -172,7 +172,7 @@ body.flash {
 .inst-btn.active {
   background: var(--text-main);
   color: var(--bg-color);
-  box-shadow: 0 0 15px rgba(255,255,255,0.3);
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
 }
 
 /* Dual Spheres Layout */
@@ -195,7 +195,8 @@ body.flash {
   justify-content: center;
   align-items: center;
   width: 320px;
-  height: 400px; /* gives enough room so it doesn't jump */
+  height: 400px;
+  /* gives enough room so it doesn't jump */
 }
 
 .sphere-title {
@@ -203,7 +204,7 @@ body.flash {
   font-size: 1.2rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  text-shadow: 0 0 10px currentColor; 
+  text-shadow: 0 0 10px currentColor;
 }
 
 .wheel-container {
@@ -212,7 +213,7 @@ body.flash {
   height: 320px;
   border-radius: 50%;
   background: var(--glass-bg);
-  border: 1px solid rgba(255,255,255,0.05);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -258,7 +259,7 @@ body.flash {
   color: var(--text-muted);
   font-size: 1.4rem;
   opacity: 0.8;
-  border-top: 1px solid rgba(255,255,255,0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding-top: 2px;
 }
 
@@ -278,7 +279,7 @@ body.flash {
   border-radius: 20px;
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
 }
 
 .final-chord {
@@ -313,8 +314,8 @@ body.flash {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(0,0,0,0.6);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
   padding: 0.8rem 1.5rem;
   border-radius: 100px;
@@ -341,10 +342,97 @@ body.flash {
   animation: pulse-red 1s infinite;
 }
 
+.panic-btn {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  padding: 0.8rem;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.panic-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  transform: scale(1.1);
+}
+
+.looper-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  padding: 0.8rem 1.5rem;
+  border-radius: 100px;
+  font-family: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.looper-btn.recording {
+  background: #ef444466;
+  border-color: #ef4444;
+  animation: pulse-border-red 1.5s infinite;
+}
+
+.looper-btn.playing {
+  background: #10b98166;
+  border-color: #10b981;
+}
+
+.looper-icon {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  position: relative;
+}
+
+.looper-icon::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  border: 5px solid transparent;
+  border-left-color: currentColor;
+  transform: rotate(45deg);
+}
+
+@keyframes pulse-border-red {
+  0% {
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+
+  50% {
+    border-color: rgba(239, 68, 68, 1);
+  }
+
+  100% {
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+}
+
 @keyframes pulse-red {
-  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-  70% { transform: scale(1.2); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+
+  70% {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
 }
 
 /* Pitch Thermometer */
@@ -362,10 +450,10 @@ body.flash {
   width: 80px;
   height: 320px;
   background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(255,255,255,0.05);
+  border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 40px;
   backdrop-filter: blur(10px);
-  box-shadow: 0 0 40px rgba(0,0,0,0.5);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
   display: flex;
   justify-content: center;
 }
@@ -399,7 +487,7 @@ body.flash {
 .harmonic-guide .wedge-path {
   fill: rgba(255, 255, 255, 0.1);
   stroke: rgba(255, 255, 255, 0.2);
-  filter: drop-shadow(0 0 5px rgba(255,255,255,0.2));
+  filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.2));
 }
 
 .note-label {
