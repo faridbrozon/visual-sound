@@ -341,6 +341,57 @@ body.flash {
   animation: pulse-red 1s infinite;
 }
 
+.looper-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #fff;
+  padding: 0.8rem 1.5rem;
+  border-radius: 100px;
+  font-family: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.looper-btn.recording {
+  background: #ef444466;
+  border-color: #ef4444;
+  animation: pulse-border-red 1.5s infinite;
+}
+
+.looper-btn.playing {
+  background: #10b98166;
+  border-color: #10b981;
+}
+
+.looper-icon {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  position: relative;
+}
+
+.looper-icon::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  border: 5px solid transparent;
+  border-left-color: currentColor;
+  transform: rotate(45deg);
+}
+
+@keyframes pulse-border-red {
+  0% { border-color: rgba(239, 68, 68, 0.4); }
+  50% { border-color: rgba(239, 68, 68, 1); }
+  100% { border-color: rgba(239, 68, 68, 0.4); }
+}
+
 @keyframes pulse-red {
   0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
   70% { transform: scale(1.2); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }

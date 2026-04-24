@@ -42,24 +42,26 @@ const CHORD_INTERVALS = {
 const TYPES = Object.keys(CHORD_INTERVALS);
 
 const INSTRUMENTS = {
-  'Ethereal Pad': () => new Tone.PolySynth(Tone.Synth, {
-    maxPolyphony: 16,
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.1, decay: 0.3, sustain: 0.8, release: 2 }
-  }),
-  'Electric Piano': () => new Tone.PolySynth(Tone.FMSynth, {
-    maxPolyphony: 16,
-    harmonicity: 3, modulationIndex: 3,
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.01, decay: 2, sustain: 0.2, release: 1.5 },
-    modulation: { type: 'square' },
-    modulationEnvelope: { attack: 0.002, decay: 0.2, sustain: 0, release: 0.2 }
-  }),
-  'Synth Pluck': () => new Tone.PolySynth(Tone.AMSynth, {
-    maxPolyphony: 16,
-    harmonicity: 1.5,
+  'Grand Piano Neo': () => new Tone.PolySynth(Tone.FMSynth, {
+    maxPolyphony: 24,
+    harmonicity: 2, modulationIndex: 5,
     oscillator: { type: 'triangle' },
-    envelope: { attack: 0.01, decay: 0.3, sustain: 0, release: 0.5 }
+    envelope: { attack: 0.005, decay: 1, sustain: 0.1, release: 1 },
+    modulation: { type: 'sine' },
+    modulationEnvelope: { attack: 0.01, decay: 0.3, sustain: 0, release: 0.1 }
+  }),
+  'Vintage Lead': () => new Tone.PolySynth(Tone.MonoSynth, {
+    maxPolyphony: 12,
+    oscillator: { type: 'square' },
+    envelope: { attack: 0.02, decay: 0.1, sustain: 0.5, release: 0.4 },
+    filter: { Q: 2, type: 'lowpass', rolloff: -12 },
+    filterEnvelope: { attack: 0.05, decay: 0.2, sustain: 0.5, release: 0.2, baseFrequency: 200, octaves: 4 }
+  }),
+  'Celestial Bells': () => new Tone.PolySynth(Tone.AMSynth, {
+    maxPolyphony: 16,
+    harmonicity: 3.5,
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.6 }
   })
 };
 
@@ -149,17 +151,20 @@ const App = () => {
   const [activeIndexNote, setActiveIndexNote] = useState('C');
   const [activeThumbNote, setActiveThumbNote] = useState('C');
   const [chordType, setChordType] = useState('Mayor');
-  const [instName, setInstName] = useState('Ethereal Pad');
+  const [instName, setInstName] = useState('Grand Piano Neo');
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [strumDelay, setStrumDelay] = useState(500); // Ms cooldown configurable
   const [rightMode, setRightMode] = useState('chord'); // 'chord' | 'pitch'
   const [currentPitch, setCurrentPitch] = useState(0); // For UI display
   const [isRecording, setIsRecording] = useState(false);
+  const [looperState, setLooperState] = useState('idle'); // 'idle' | 'recording' | 'playing'
 
   const synthRef = useRef(null);
   const filterRef = useRef(null);
   const pitchShiftRef = useRef(null);
   const recorderRef = useRef(null);
+  const looperRecorderRef = useRef(null);
+  const looperPlayerRef = useRef(null);
   const effectsRef = useRef([]);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -195,13 +200,17 @@ const App = () => {
     // Expresión Theremin: Lowpass Dymanico + PitchShift Dinámico
     const filter = new Tone.Filter(2000, "lowpass");
     const pitchShift = new Tone.PitchShift({ pitch: 0 }); // En semitonos (-12, 12)
-    const chorus = new Tone.Chorus(4, 2.5, 0.5).start();
-    const reverb = new Tone.Reverb(3);
+    const chorus = new Tone.Chorus(2, 1.5, 0.3).start(); // Menos invasivo
+    const reverb = new Tone.Reverb(1.2); // Reducido de 3s a 1.2s para más claridad melódica
+    reverb.wet.value = 0.4; // Menos "mojado", más presencia de la nota real
 
     // Cadena de Masterización Anti-Saturación / Anti-Clipping
     const compressor = new Tone.Compressor(-20, 4); // Comprimir cuando la suma de acordes pasa -20db
     const limiter = new Tone.Limiter(-1); // Bloqueo de pared de ladrillo en -1db (Cero distorsión final)
     const recorder = new Tone.Recorder();
+    const looperRecorder = new Tone.Recorder();
+    const looperPlayer = new Tone.Player().toDestination();
+    looperPlayer.loop = true;
 
     synth.connect(filter);
     filter.connect(pitchShift);
@@ -209,11 +218,14 @@ const App = () => {
     chorus.connect(reverb);
     reverb.chain(compressor, limiter, Tone.getDestination());
     limiter.connect(recorder);
+    limiter.connect(looperRecorder);
 
     synthRef.current = synth;
     filterRef.current = filter;
     pitchShiftRef.current = pitchShift;
     recorderRef.current = recorder;
+    looperRecorderRef.current = looperRecorder;
+    looperPlayerRef.current = looperPlayer;
     effectsRef.current = [chorus, reverb];
 
     fingersRef.current.leftIndex.isHolding = false;
@@ -279,6 +291,27 @@ const App = () => {
       anchor.href = url;
       anchor.click();
       setIsRecording(false);
+    }
+  };
+
+  const handleToggleLooper = async () => {
+    if (!looperRecorderRef.current || !looperPlayerRef.current) return;
+    
+    if (looperState === 'idle') {
+      // Empezar a grabar bucle
+      looperRecorderRef.current.start();
+      setLooperState('recording');
+    } else if (looperState === 'recording') {
+      // Parar y empezar a loopear
+      const recording = await looperRecorderRef.current.stop();
+      const url = URL.createObjectURL(recording);
+      await looperPlayerRef.current.load(url);
+      looperPlayerRef.current.start();
+      setLooperState('playing');
+    } else {
+      // Parar todo y limpiar
+      looperPlayerRef.current.stop();
+      setLooperState('idle');
     }
   };
 
@@ -389,30 +422,31 @@ const App = () => {
             const distIndex = Math.hypot(indexScreenX - center.cx, indexScreenY - center.cy);
             const distThumb = Math.hypot(thumbScreenX - center.cx, thumbScreenY - center.cy);
 
-            // 1. Interpretar Dedo Índice
+            // 1. Interpretar Dedo Índice (Modo Piano)
             if (distIndex < 500 && indexScreenX < window.innerWidth / 2) {
               const index = getIndexFromAngle(indexScreenX, indexScreenY, center.cx, center.cy, NOTES.length);
               const triggeredNote = NOTES[index];
               hoveringIndex = true;
-
+              
               const fRef = fingersRef.current['leftIndex'];
-              if (fRef.currentNote !== triggeredNote || now - fRef.time > refState.strumDelay) {
+              // SOLO disparar si la nota cambió o si el dedo estaba afuera (RELEASED)
+              if (!fRef.isHolding || fRef.currentNote !== triggeredNote) {
                 setActiveIndexNote(triggeredNote);
                 playFingerChordSustain('leftIndex', triggeredNote, refState.chordType);
                 fRef.time = now;
-                // Emitir partículas al tocar nota
                 for (let i = 0; i < 5; i++) particlesRef.current.push(new Particle(indexCanvasX, indexCanvasY, pointerColor));
               }
             }
 
-            // 2. Interpretar Dedo Pulgar (Totalmente Independiente)
+            // 2. Interpretar Dedo Pulgar (Modo Piano)
             if (distThumb < 500 && thumbScreenX < window.innerWidth / 2) {
               const index = getIndexFromAngle(thumbScreenX, thumbScreenY, center.cx, center.cy, NOTES.length);
               const triggeredNote = NOTES[index];
               hoveringThumb = true;
-
+              
               const fRef = fingersRef.current['leftThumb'];
-              if (fRef.currentNote !== triggeredNote || now - fRef.time > refState.strumDelay) {
+              // SOLO disparar si la nota cambió o si el dedo estaba afuera (RELEASED)
+              if (!fRef.isHolding || fRef.currentNote !== triggeredNote) {
                 setActiveThumbNote(triggeredNote);
                 playFingerChordSustain('leftThumb', triggeredNote, refState.chordType);
                 fRef.time = now;
@@ -530,6 +564,11 @@ const App = () => {
 
           <button class="record-btn ${isRecording ? 'recording' : ''}" onClick=${handleToggleRecord}>
             <span class="dot"></span> ${isRecording ? 'DETENER' : 'GRABAR HUELLA'}
+          </button>
+
+          <button class="looper-btn ${looperState}" onClick=${handleToggleLooper}>
+             <div class="looper-icon"></div>
+             ${looperState === 'idle' ? 'GRABAR BUCLE' : looperState === 'recording' ? 'FINALIZAR' : 'BORRAR BUCLE'}
           </button>
         </header>
 
