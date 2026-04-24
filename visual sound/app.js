@@ -13,13 +13,14 @@ class Particle {
     this.speedX = Math.random() * 4 - 2;
     this.speedY = Math.random() * -6 - 1; // Fly upwards
     this.life = 1.0;
+    this.decay = Math.random() * 0.03 + 0.02; // Variar decaimiento
     this.color = color;
   }
   update() {
     this.x += this.speedX;
     this.y += this.speedY;
-    this.life -= 0.02;
-    if (this.size > 0.1) this.size -= 0.1;
+    this.life -= this.decay;
+    if (this.size > 0.1) this.size -= 0.15;
   }
   draw(ctx) {
     ctx.globalAlpha = this.life;
@@ -299,7 +300,7 @@ const App = () => {
 
   const handleToggleLooper = async () => {
     if (!looperRecorderRef.current || !looperPlayerRef.current) return;
-    
+
     if (looperState === 'idle') {
       // Empezar a grabar bucle
       looperRecorderRef.current.start();
@@ -425,12 +426,17 @@ const App = () => {
             const distIndex = Math.hypot(indexScreenX - center.cx, indexScreenY - center.cy);
             const distThumb = Math.hypot(thumbScreenX - center.cx, thumbScreenY - center.cy);
 
+            // Auto-Resume AudioContext si Chrome lo suspendió
+            if (Tone.context.state !== 'running') {
+              Tone.context.resume();
+            }
+
             // 1. Interpretar Dedo Índice (Modo Piano)
             if (distIndex < 500 && indexScreenX < window.innerWidth / 2) {
               const index = getIndexFromAngle(indexScreenX, indexScreenY, center.cx, center.cy, NOTES.length);
               const triggeredNote = NOTES[index];
               hoveringIndex = true;
-              
+
               const fRef = fingersRef.current['leftIndex'];
               // SOLO disparar si la nota cambió o si el dedo estaba afuera (RELEASED)
               if (!fRef.isHolding || fRef.currentNote !== triggeredNote) {
@@ -446,7 +452,7 @@ const App = () => {
               const index = getIndexFromAngle(thumbScreenX, thumbScreenY, center.cx, center.cy, NOTES.length);
               const triggeredNote = NOTES[index];
               hoveringThumb = true;
-              
+
               const fRef = fingersRef.current['leftThumb'];
               // SOLO disparar si la nota cambió o si el dedo estaba afuera (RELEASED)
               if (!fRef.isHolding || fRef.currentNote !== triggeredNote) {
@@ -573,6 +579,11 @@ const App = () => {
              <div class="looper-icon"></div>
              ${looperState === 'idle' ? 'GRABAR BUCLE' : looperState === 'recording' ? 'FINALIZAR' : 'BORRAR BUCLE'}
           </button>
+
+          <button class="panic-btn" title="Reset Audio" onClick=${() => {
+      if (synthRef.current) synthRef.current.releaseAll();
+      Tone.context.resume();
+    }}>🚨</button>
         </header>
 
         <div class="spheres-layout">
