@@ -155,7 +155,7 @@ const App = () => {
   const [instName, setInstName] = useState('Grand Piano Neo');
   const [cameraEnabled, setCameraEnabled] = useState(false);
   const [strumDelay, setStrumDelay] = useState(500); // Ms cooldown configurable
-  const [rightMode, setRightMode] = useState('chord'); // 'chord' | 'pitch'
+  const [rightMode, setRightMode] = useState('pitch'); // Empieza en Pitch Mode por defecto
   const [currentPitch, setCurrentPitch] = useState(0); // For UI display
   const [isRecording, setIsRecording] = useState(false);
   const [looperState, setLooperState] = useState('idle'); // 'idle' | 'recording' | 'playing'
@@ -179,44 +179,34 @@ const App = () => {
     leftThumb: { isHolding: false, currentNote: null, currentType: null, time: 0, activeFreqs: [] }
   });
 
+
   // Keep ref synchronized with state for async callbacks without re-bind
   const configRef = useRef({ strumDelay, activeIndexNote, chordType, rightMode });
   useEffect(() => {
     configRef.current = { strumDelay, activeIndexNote, chordType, rightMode };
   }, [strumDelay, activeIndexNote, chordType, rightMode]);
 
+  // 1. Crear la red de audio (solo una vez)
   useEffect(() => {
-    if (synthRef.current) {
-      synthRef.current.dispose();
-      filterRef.current.dispose();
-      pitchShiftRef.current.dispose();
-      recorderRef.current.dispose();
-      looperRecorderRef.current.dispose();
-      looperPlayerRef.current.dispose();
-      effectsRef.current.forEach(fx => fx.dispose());
-    }
-
-    const synth = INSTRUMENTS[instName]();
-    // Bajamos el volumen dinámicamente un poco para dar headroom a la mezcla Master
-    synth.volume.value = -4;
-    Tone.getDestination().volume.value = -3; // Nivel maestro seguro
-
-    // Expresión Theremin: Lowpass Dymanico + PitchShift Dinámico
-    const filter = new Tone.Filter(2000, "lowpass");
-    const pitchShift = new Tone.PitchShift({ pitch: 0 }); // En semitonos (-12, 12)
-    const chorus = new Tone.Chorus(2, 1.5, 0.3).start(); // Menos invasivo
-    const reverb = new Tone.Reverb(1.2); // Reducido de 3s a 1.2s para más claridad melódica
-    reverb.wet.value = 0.4; // Menos "mojado", más presencia de la nota real
-
-    // Cadena de Masterización Anti-Saturación / Anti-Clipping
-    const compressor = new Tone.Compressor(-20, 4); // Comprimir cuando la suma de acordes pasa -20db
-    const limiter = new Tone.Limiter(-1); // Bloqueo de pared de ladrillo en -1db (Cero distorsión final)
+    // Master Limiter & Compressor
+    const compressor = new Tone.Compressor(-20, 4);
+    const limiter = new Tone.Limiter(-1);
     const recorder = new Tone.Recorder();
     const looperRecorder = new Tone.Recorder();
     const looperPlayer = new Tone.Player().toDestination();
     looperPlayer.loop = true;
 
-    synth.connect(filter);
+
+
+
+    // Efectos Maestro Ultraligeros (Eco Mode)
+    const filter = new Tone.Filter(2000, "lowpass");
+    const pitchShift = new Tone.PitchShift({ pitch: 0 });
+    const chorus = new Tone.Chorus(2, 1.5, 0.3).start();
+    const reverb = new Tone.Freeverb(0.6, 2000); // Mucho más ligero que Tone.Reverb
+    reverb.wet.value = 0.3;
+
+    // Conectar la cadena
     filter.connect(pitchShift);
     pitchShift.connect(chorus);
     chorus.connect(reverb);
@@ -224,7 +214,6 @@ const App = () => {
     limiter.connect(recorder);
     limiter.connect(looperRecorder);
 
-    synthRef.current = synth;
     filterRef.current = filter;
     pitchShiftRef.current = pitchShift;
     recorderRef.current = recorder;
@@ -232,6 +221,29 @@ const App = () => {
     looperPlayerRef.current = looperPlayer;
     effectsRef.current = [chorus, reverb];
 
+    return () => {
+      filter.dispose();
+      pitchShift.dispose();
+      recorder.dispose();
+      looperRecorder.dispose();
+      looperPlayer.dispose();
+      chorus.dispose();
+      reverb.dispose();
+      compressor.dispose();
+      limiter.dispose();
+    };
+  }, []);
+
+  // 2. Manejar Instrumentos Dinámicamente
+  useEffect(() => {
+    if (synthRef.current) synthRef.current.dispose();
+    const synth = INSTRUMENTS[instName]();
+    synth.volume.value = -6; // Más headroom para evitar cortes por saturación
+
+    // Conectar solo el synth al filtro de la red estática
+    if (filterRef.current) synth.connect(filterRef.current);
+
+    synthRef.current = synth;
     fingersRef.current.leftIndex.isHolding = false;
     fingersRef.current.leftThumb.isHolding = false;
   }, [instName]);
@@ -328,19 +340,24 @@ const App = () => {
     });
     hands.setOptions({
       maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
+      modelComplexity: 0,
+      minDetectionConfidence: 0.4,
+      minTrackingConfidence: 0.4
     });
 
     hands.onResults(onResults);
 
+    let frameCounter = 0;
     const camera = new window.Camera(videoRef.current, {
       onFrame: async () => {
-        await hands.send({ image: videoRef.current });
+        frameCounter++;
+        // Analizar solo cada 4 frames para dar respuesta INSTANTÁNEA al sonido
+        if (frameCounter % 4 === 0) {
+          await hands.send({ image: videoRef.current });
+        }
       },
-      width: 1280,
-      height: 720
+      width: 640,
+      height: 480
     });
     camera.start();
   };
@@ -361,148 +378,156 @@ const App = () => {
   };
 
   const onResults = (results) => {
-    const canvasObj = canvasRef.current;
-    if (!canvasObj) return;
-    const ctx = canvasObj.getContext('2d');
-    canvasObj.width = window.innerWidth;
-    canvasObj.height = window.innerHeight;
+    try {
+      const canvasObj = canvasRef.current;
+      if (!canvasObj) return;
 
-    ctx.save();
-    ctx.clearRect(0, 0, canvasObj.width, canvasObj.height);
-    ctx.translate(canvasObj.width, 0);
-    ctx.scale(-1, 1);
+      // Auto-Recuperación de Audio (Si Chrome lo durmió)
+      if (Tone.context.state !== 'running') {
+        Tone.context.resume().catch(() => { });
+      }
 
-    const refState = configRef.current;
-    const now = Date.now();
-    let hoveringIndex = false;
-    let hoveringThumb = false;
+      const ctx = canvasObj.getContext('2d');
+      canvasObj.width = window.innerWidth;
+      canvasObj.height = window.innerHeight;
 
-    if (results.multiHandLandmarks && results.multiHandedness) {
-      for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-        const landmarks = results.multiHandLandmarks[i];
+      ctx.save();
+      ctx.clearRect(0, 0, canvasObj.width, canvasObj.height);
+      ctx.translate(canvasObj.width, 0);
+      ctx.scale(-1, 1);
 
-        const isLeftHandUser = results.multiHandedness[i].label === 'Right';
-        const pointerColor = isLeftHandUser ? '#3b82f6' : '#ec4899';
+      const refState = configRef.current;
+      const now = Date.now();
+      let hoveringIndex = false;
+      let hoveringThumb = false;
 
-        window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, { color: 'rgba(255, 255, 255, 0.2)', lineWidth: 3 });
-        window.drawLandmarks(ctx, landmarks, { color: pointerColor, lineWidth: 1, radius: 4 });
+      if (results.multiHandLandmarks && results.multiHandedness) {
+        for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+          const landmarks = results.multiHandLandmarks[i];
 
-        const indexTip = landmarks[8];
-        const thumbTip = landmarks[4];
+          const isLeftHandUser = results.multiHandedness[i].label === 'Right';
+          const pointerColor = isLeftHandUser ? '#3b82f6' : '#ec4899';
 
-        const indexCanvasX = indexTip.x * canvasObj.width;
-        const indexCanvasY = indexTip.y * canvasObj.height;
-        const thumbCanvasX = thumbTip.x * canvasObj.width;
-        const thumbCanvasY = thumbTip.y * canvasObj.height;
+          // Dibujo Eco: Solo landmarks importantes, no conectores pesados
+          window.drawLandmarks(ctx, landmarks, { color: pointerColor, lineWidth: 1, radius: 3 });
 
-        const indexScreenX = (1 - indexTip.x) * window.innerWidth;
-        const indexScreenY = indexTip.y * window.innerHeight;
-        const thumbScreenX = (1 - thumbTip.x) * window.innerWidth;
-        const thumbScreenY = thumbTip.y * window.innerHeight;
+          const indexTip = landmarks[8];
+          const thumbTip = landmarks[4];
 
-        // Dibujar el Tracker del Índice y Pulgar
-        ctx.beginPath();
-        ctx.arc(indexCanvasX, indexCanvasY, 18, 0, 2 * Math.PI);
-        ctx.fillStyle = pointerColor + 'AA';
-        ctx.shadowColor = pointerColor;
-        ctx.shadowBlur = 20;
-        ctx.fill();
+          const indexCanvasX = indexTip.x * canvasObj.width;
+          const indexCanvasY = indexTip.y * canvasObj.height;
+          const thumbCanvasX = thumbTip.x * canvasObj.width;
+          const thumbCanvasY = thumbTip.y * canvasObj.height;
 
-        ctx.beginPath();
-        ctx.arc(thumbCanvasX, thumbCanvasY, 15, 0, 2 * Math.PI);
-        ctx.fillStyle = pointerColor + 'DD';
-        ctx.fill();
+          const indexScreenX = (1 - indexTip.x) * window.innerWidth;
+          const indexScreenY = indexTip.y * window.innerHeight;
+          const thumbScreenX = (1 - thumbTip.x) * window.innerWidth;
+          const thumbScreenY = thumbTip.y * window.innerHeight;
 
-        if (isLeftHandUser) {
+          // Dibujar el Tracker del Índice y Pulgar
+          ctx.beginPath();
+          ctx.arc(indexCanvasX, indexCanvasY, 18, 0, 2 * Math.PI);
+          ctx.fillStyle = pointerColor + 'AA';
+          ctx.shadowColor = pointerColor;
+          ctx.shadowBlur = 20;
+          ctx.fill();
 
-          // Theremin Expresivo de Brillo
-          const yPercent = Math.max(0, Math.min(1, indexTip.y));
-          const filterFreq = 100 + ((1.0 - yPercent) * 7000);
-          if (filterRef.current) filterRef.current.frequency.rampTo(filterFreq, 0.1);
+          ctx.beginPath();
+          ctx.arc(thumbCanvasX, thumbCanvasY, 15, 0, 2 * Math.PI);
+          ctx.fillStyle = pointerColor + 'DD';
+          ctx.fill();
 
-          // Cálculo Angular: Índices y Pulgares 100% Autónomos (Múltiples Voces Simultáneas)
-          const center = getElementCenter(leftWheelRef);
-          if (center) {
-            const distIndex = Math.hypot(indexScreenX - center.cx, indexScreenY - center.cy);
-            const distThumb = Math.hypot(thumbScreenX - center.cx, thumbScreenY - center.cy);
+          if (isLeftHandUser) {
 
-            // Auto-Resume AudioContext si Chrome lo suspendió
-            if (Tone.context.state !== 'running') {
-              Tone.context.resume();
+            // Theremin Expresivo de Brillo
+            const yPercent = Math.max(0, Math.min(1, indexTip.y));
+            const filterFreq = 100 + ((1.0 - yPercent) * 7000);
+            if (filterRef.current) filterRef.current.frequency.rampTo(filterFreq, 0.1);
+
+            // Cálculo Angular: Índices y Pulgares 100% Autónomos (Múltiples Voces Simultáneas)
+            const center = getElementCenter(leftWheelRef);
+            if (center) {
+              const distIndex = Math.hypot(indexScreenX - center.cx, indexScreenY - center.cy);
+              const distThumb = Math.hypot(thumbScreenX - center.cx, thumbScreenY - center.cy);
+
+              // Auto-Resume AudioContext si Chrome lo suspendió
+              if (Tone.context.state !== 'running') {
+                Tone.context.resume();
+              }
+
+              // 1. Interpretar Dedo Índice (Modo Piano)
+              if (distIndex < 500 && indexScreenX < window.innerWidth / 2) {
+                const index = getIndexFromAngle(indexScreenX, indexScreenY, center.cx, center.cy, NOTES.length);
+                const triggeredNote = NOTES[index];
+                hoveringIndex = true;
+
+                const fRef = fingersRef.current['leftIndex'];
+                // SOLO disparar si: 1. La nota cambió Y 2. Ha pasado el tiempo de Cooldown (strumDelay)
+                if ((!fRef.isHolding || fRef.currentNote !== triggeredNote) && (now - fRef.time > refState.strumDelay)) {
+                  setActiveIndexNote(triggeredNote);
+                  playFingerChordSustain('leftIndex', triggeredNote, refState.chordType);
+                  fRef.time = now;
+                  for (let i = 0; i < 5; i++) particlesRef.current.push(new Particle(indexCanvasX, indexCanvasY, pointerColor));
+                }
+              }
+
+              // 2. Interpretar Dedo Pulgar (Modo Piano)
+              if (distThumb < 500 && thumbScreenX < window.innerWidth / 2) {
+                const index = getIndexFromAngle(thumbScreenX, thumbScreenY, center.cx, center.cy, NOTES.length);
+                const triggeredNote = NOTES[index];
+                hoveringThumb = true;
+
+                const fRef = fingersRef.current['leftThumb'];
+                // SOLO disparar si: 1. La nota cambió Y 2. Ha pasado el tiempo de Cooldown (strumDelay)
+                if ((!fRef.isHolding || fRef.currentNote !== triggeredNote) && (now - fRef.time > refState.strumDelay)) {
+                  setActiveThumbNote(triggeredNote);
+                  playFingerChordSustain('leftThumb', triggeredNote, refState.chordType);
+                  fRef.time = now;
+                  for (let i = 0; i < 5; i++) particlesRef.current.push(new Particle(thumbCanvasX, thumbCanvasY, pointerColor));
+                }
+              }
             }
+          } else {
+            // Mano Derecha: Modo Pitch o Modo Acordes (Pulgar o Índice, aquí sí gana el que esté más cerca porque maneja Configuración)
+            let activeX = indexScreenX;
+            let activeY = indexScreenY;
 
-            // 1. Interpretar Dedo Índice (Modo Piano)
-            if (distIndex < 500 && indexScreenX < window.innerWidth / 2) {
-              const index = getIndexFromAngle(indexScreenX, indexScreenY, center.cx, center.cy, NOTES.length);
-              const triggeredNote = NOTES[index];
-              hoveringIndex = true;
-
-              const fRef = fingersRef.current['leftIndex'];
-              // SOLO disparar si la nota cambió o si el dedo estaba afuera (RELEASED)
-              if (!fRef.isHolding || fRef.currentNote !== triggeredNote) {
-                setActiveIndexNote(triggeredNote);
-                playFingerChordSustain('leftIndex', triggeredNote, refState.chordType);
-                fRef.time = now;
-                for (let i = 0; i < 5; i++) particlesRef.current.push(new Particle(indexCanvasX, indexCanvasY, pointerColor));
+            const center = getElementCenter(rightWheelRef);
+            if (center) {
+              const distIndex = Math.hypot(indexScreenX - center.cx, indexScreenY - center.cy);
+              const distThumb = Math.hypot(thumbScreenX - center.cx, thumbScreenY - center.cy);
+              if (distThumb < distIndex) {
+                activeX = thumbScreenX;
+                activeY = thumbScreenY;
               }
             }
 
-            // 2. Interpretar Dedo Pulgar (Modo Piano)
-            if (distThumb < 500 && thumbScreenX < window.innerWidth / 2) {
-              const index = getIndexFromAngle(thumbScreenX, thumbScreenY, center.cx, center.cy, NOTES.length);
-              const triggeredNote = NOTES[index];
-              hoveringThumb = true;
+            if (activeX >= window.innerWidth / 2) {
+              if (refState.rightMode === 'pitch') {
+                // Pitch Shifter: Subir y bajar tonos
+                const mappedPitch = Math.round(((window.innerHeight / 2 - activeY) / (window.innerHeight / 2)) * 12);
+                const constrainedPitch = Math.max(-12, Math.min(12, mappedPitch));
 
-              const fRef = fingersRef.current['leftThumb'];
-              // SOLO disparar si la nota cambió o si el dedo estaba afuera (RELEASED)
-              if (!fRef.isHolding || fRef.currentNote !== triggeredNote) {
-                setActiveThumbNote(triggeredNote);
-                playFingerChordSustain('leftThumb', triggeredNote, refState.chordType);
-                fRef.time = now;
-                for (let i = 0; i < 5; i++) particlesRef.current.push(new Particle(thumbCanvasX, thumbCanvasY, pointerColor));
-              }
-            }
-          }
-        } else {
-          // Mano Derecha: Modo Pitch o Modo Acordes (Pulgar o Índice, aquí sí gana el que esté más cerca porque maneja Configuración)
-          let activeX = indexScreenX;
-          let activeY = indexScreenY;
+                if (pitchShiftRef.current) {
+                  pitchShiftRef.current.pitch = constrainedPitch; // Saltos perfectos (escala cromática)
+                  setCurrentPitch(constrainedPitch);
+                }
+              } else {
+                // Modo Acorde (Cálculo Angular)
+                if (center) {
+                  const distActive = Math.hypot(activeX - center.cx, activeY - center.cy);
+                  if (distActive < 500) {
+                    const index = getIndexFromAngle(activeX, activeY, center.cx, center.cy, TYPES.length);
+                    const triggeredType = TYPES[index];
 
-          const center = getElementCenter(rightWheelRef);
-          if (center) {
-            const distIndex = Math.hypot(indexScreenX - center.cx, indexScreenY - center.cy);
-            const distThumb = Math.hypot(thumbScreenX - center.cx, thumbScreenY - center.cy);
-            if (distThumb < distIndex) {
-              activeX = thumbScreenX;
-              activeY = thumbScreenY;
-            }
-          }
-
-          if (activeX >= window.innerWidth / 2) {
-            if (refState.rightMode === 'pitch') {
-              // Pitch Shifter: Subir y bajar tonos
-              const mappedPitch = Math.round(((window.innerHeight / 2 - activeY) / (window.innerHeight / 2)) * 12);
-              const constrainedPitch = Math.max(-12, Math.min(12, mappedPitch));
-
-              if (pitchShiftRef.current) {
-                pitchShiftRef.current.pitch = constrainedPitch; // Saltos perfectos (escala cromática)
-                setCurrentPitch(constrainedPitch);
-              }
-            } else {
-              // Modo Acorde (Cálculo Angular)
-              if (center) {
-                const distActive = Math.hypot(activeX - center.cx, activeY - center.cy);
-                if (distActive < 500) {
-                  const index = getIndexFromAngle(activeX, activeY, center.cx, center.cy, TYPES.length);
-                  const triggeredType = TYPES[index];
-
-                  if (refState.chordType !== triggeredType) {
-                    setChordType(triggeredType);
-                    // Update any already-holding notes to the new type dynamically
-                    const lIndex = fingersRef.current['leftIndex'];
-                    const lThumb = fingersRef.current['leftThumb'];
-                    if (lIndex.isHolding) playFingerChordSustain('leftIndex', lIndex.currentNote, triggeredType);
-                    if (lThumb.isHolding) playFingerChordSustain('leftThumb', lThumb.currentNote, triggeredType);
+                    if (refState.chordType !== triggeredType) {
+                      setChordType(triggeredType);
+                      // Update any already-holding notes to the new type dynamically
+                      const lIndex = fingersRef.current['leftIndex'];
+                      const lThumb = fingersRef.current['leftThumb'];
+                      if (lIndex.isHolding) playFingerChordSustain('leftIndex', lIndex.currentNote, triggeredType);
+                      if (lThumb.isHolding) playFingerChordSustain('leftThumb', lThumb.currentNote, triggeredType);
+                    }
                   }
                 }
               }
@@ -510,20 +535,22 @@ const App = () => {
           }
         }
       }
+
+      // Apagado selectivo ("Release") por cada dedo individual que salga de la mesa
+      if (!hoveringIndex) playFingerChordRelease('leftIndex');
+      if (!hoveringThumb) playFingerChordRelease('leftThumb');
+
+      // Update and Draw Particles
+      particlesRef.current = particlesRef.current.filter(p => p.life > 0);
+      particlesRef.current.forEach(p => {
+        p.update();
+        p.draw(ctx);
+      });
+
+      ctx.restore();
+    } catch (e) {
+      console.warn("Frame skipped due to motor lag", e);
     }
-
-    // Apagado selectivo ("Release") por cada dedo individual que salga de la mesa
-    if (!hoveringIndex) playFingerChordRelease('leftIndex');
-    if (!hoveringThumb) playFingerChordRelease('leftThumb');
-
-    // Update and Draw Particles
-    particlesRef.current = particlesRef.current.filter(p => p.life > 0);
-    particlesRef.current.forEach(p => {
-      p.update();
-      p.draw(ctx);
-    });
-
-    ctx.restore();
   };
 
   return html`
